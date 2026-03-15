@@ -4,6 +4,12 @@
     <meta charset="UTF-8">
     <meta name="robots" content="noindex, nofollow">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="color-scheme" content="dark light">
+    <meta name="theme-color" content="#0D0D0D" media="(prefers-color-scheme: dark)">
+    <meta name="theme-color" content="#F9FAFB" media="(prefers-color-scheme: light)">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Posimai Daily">
     <title>Posimai Daily</title>
     
     <!-- Theme & Security Initialization (Prevent FOUC) -->
@@ -330,7 +336,7 @@
             backdrop-filter: blur(20px);
             -webkit-backdrop-filter: blur(20px);
             border: 1px solid var(--border);
-            border-radius: 24px;
+            border-radius: calc(var(--radius) * 2);
             padding: 24px;
             display: flex;
             flex-direction: column;
@@ -354,7 +360,7 @@
             padding: 14px;
             background: rgba(255,255,255,0.02);
             border: 1px solid transparent;
-            border-radius: 16px;
+            border-radius: var(--radius);
             text-decoration: none;
             color: inherit;
             transition: all 0.2s cubic-bezier(.4, 0, .2, 1);
@@ -400,7 +406,7 @@
             position: fixed;
             bottom: 0; left: 0; right: 0;
             height: 90px;
-            background: linear-gradient(to top, #000 70%, transparent);
+            background: linear-gradient(to top, var(--bg) 70%, transparent);
             backdrop-filter: blur(25px);
             -webkit-backdrop-filter: blur(25px);
             display: flex;
@@ -606,24 +612,24 @@
 <div class="overlay" id="overlay"></div>
 <aside class="settings-panel" id="settingsPanel">
     <div class="settings-header">
-        <h3>Settings</h3>
+        <h3>設定</h3>
         <button class="control-btn" id="closeSettings"><i data-lucide="x"></i></button>
     </div>
 
     <div class="settings-section">
-        <span class="settings-label">Security</span>
+        <span class="settings-label">APIキー</span>
         <input type="password" id="apiKeyInput" class="settings-input" placeholder="Posimai API Key">
     </div>
 
     <div class="settings-section">
-        <span class="settings-label">Appearance</span>
+        <span class="settings-label">テーマ</span>
         <button class="settings-btn" id="themeToggle" style="background: var(--surface); color: var(--text); border: 1px solid var(--border);">
-            Switch Theme
+            テーマ切り替え
         </button>
     </div>
 
     <div style="margin-top: auto;">
-        <button class="settings-btn" style="width: 100%;" id="saveSettings">Save Changes</button>
+        <button class="settings-btn" style="width: 100%;" id="saveSettings">保存</button>
     </div>
 </aside>
 
@@ -676,6 +682,12 @@
         setTimeout(() => p.remove(), 1000);
     }
 
+    // ── 音声エンジン ──────────────────────────────────────────────────
+    // 優先: Synology VOICEVOX API → フォールバック: ブラウザ Web Speech API
+
+    const TTS_API = 'https://posimai-lab.tail72e846.ts.net/brain/api/tts';
+    const TTS_SPEAKER = 1; // VOICEVOX 話者ID (1: ずんだもん ノーマル)
+
     // Play/Pause State
     const playBtn = document.getElementById('playBtn');
     const playInner = playBtn.querySelector('.play-inner');
@@ -684,39 +696,91 @@
     let particleInterval;
     let speechQueue = [];
     let currentSpeechIndex = 0;
-    let syntheticVoice = null;
 
-    // Initialize Audio Engine (find Japanese voice)
-    function initSpeech() {
+    // フォールバック用ブラウザ音声（VOICEVOX が使えない場合）
+    let syntheticVoice = null;
+    function initFallbackVoice() {
         const voices = window.speechSynthesis.getVoices();
-        syntheticVoice = voices.find(v => v.lang.includes('ja-JP')) || voices[0];
+        syntheticVoice = voices.find(v => v.lang.startsWith('ja')) || voices[0];
     }
     if (window.speechSynthesis.onvoiceschanged !== undefined) {
-        window.speechSynthesis.onvoiceschanged = initSpeech;
+        window.speechSynthesis.onvoiceschanged = initFallbackVoice;
     }
-    initSpeech();
+    initFallbackVoice();
 
-    function speak(text) {
-        if (!text) return;
-        const utter = new SpeechSynthesisUtterance(text);
+    // 現在再生中の Audio 要素
+    let audioEl = null;
+    // URL を使い終わったら開放（メモリリーク防止）
+    let currentBlobUrl = null;
+
+    function preprocessSpeech(text) {
+        if (!text) return '';
+        return text
+            .replace(/https?:\/\/\S+/g, '')           // URL 除去
+            .replace(/[「」『』【】〔〕《》]/g, '')    // 括弧除去
+            .replace(/([。！？])([^\s])/g, '$1 $2')    // 句読点後にポーズ
+            .replace(/…/g, '。')                       // 省略記号正規化
+            .replace(/\s{2,}/g, ' ')
+            .trim();
+    }
+
+    // VOICEVOX API から WAV を取得して再生
+    async function fetchAndPlay(text) {
+        const apiKey = localStorage.getItem('posimai-daily-apikey');
+        if (!apiKey) throw new Error('no api key');
+
+        const res = await fetch(TTS_API, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({ text: preprocessSpeech(text), speaker: TTS_SPEAKER })
+        });
+
+        if (!res.ok) throw new Error(`TTS ${res.status}`);
+
+        const blob = await res.blob();
+        if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
+        currentBlobUrl = URL.createObjectURL(blob);
+
+        audioEl = new Audio(currentBlobUrl);
+        audioEl.onended = () => {
+            if (isPlaying) {
+                currentSpeechIndex++;
+                playNext();
+            }
+        };
+        audioEl.onerror = () => {
+            // WAV 再生失敗 → フォールバック
+            speakFallback(text);
+        };
+        await audioEl.play();
+    }
+
+    // ブラウザ TTS フォールバック
+    function speakFallback(text) {
+        const utter = new SpeechSynthesisUtterance(preprocessSpeech(text));
         utter.voice = syntheticVoice;
-        utter.rate = 1.05; // Slightly faster for premium feel
-        utter.pitch = 1.0;
-        
+        utter.rate = 0.92;
         utter.onend = () => {
             if (isPlaying) {
                 currentSpeechIndex++;
-                if (currentSpeechIndex < speechQueue.length) {
-                    speak(speechQueue[currentSpeechIndex]);
-                } else {
-                    // Reached end
-                    isPlaying = false;
-                    stopEffects();
-                    updateButtonUI();
-                }
+                playNext();
             }
         };
         window.speechSynthesis.speak(utter);
+    }
+
+    function playNext() {
+        if (currentSpeechIndex >= speechQueue.length) {
+            isPlaying = false;
+            stopEffects();
+            updateButtonUI();
+            return;
+        }
+        const text = speechQueue[currentSpeechIndex];
+        fetchAndPlay(text).catch(() => speakFallback(text));
     }
 
     function updateButtonUI() {
@@ -727,6 +791,10 @@
     function stopEffects() {
         clearInterval(waveInterval);
         clearInterval(particleInterval);
+        // VOICEVOX Audio を停止
+        if (audioEl) { audioEl.pause(); audioEl.src = ''; audioEl = null; }
+        if (currentBlobUrl) { URL.revokeObjectURL(currentBlobUrl); currentBlobUrl = null; }
+        // フォールバック TTS も停止
         window.speechSynthesis.cancel();
         updateWaveform();
     }
@@ -763,7 +831,7 @@
             // Start or resume audio
             if (speechQueue.length > 0) {
                 if (currentSpeechIndex >= speechQueue.length) currentSpeechIndex = 0;
-                speak(speechQueue[currentSpeechIndex]);
+                playNext();
             }
         } else {
             stopEffects();
@@ -774,7 +842,7 @@
     async function fetchBriefing() {
         const list = document.getElementById('summary-items-list');
         const summaryTitle = document.getElementById('summary-title');
-        const apiKey = localStorage.getItem('posimai_api_key');
+        const apiKey = localStorage.getItem('posimai-daily-apikey');
         
         if (!apiKey) {
             list.innerHTML = '<p style="color:var(--text-dim); font-size:12px; text-align:center; padding: 20px;">APIキーが設定されていません。<br>Setupメニューから入力してください。</p>';
@@ -805,7 +873,8 @@
                 speechQueue = [];
                 articles.forEach((a, i) => {
                     const prefix = i === 0 ? "最初のニュースです。" : "続いて。";
-                    speechQueue.push(`${prefix}${a.source || '不明なソース'}より。${a.title}`);
+                    const body = a.summary || a.title;
+                    speechQueue.push(`${prefix}${a.source || '不明なソース'}より。${body}`);
                 });
                 speechQueue.push("本日のブリーフィングは以上です。");
 
@@ -820,7 +889,7 @@
                     const safeUrl = escapeHTML(a.url);
                     
                     return `
-                        <a href="${safeUrl}" target="_blank" class="summary-item" id="news-${i}">
+                        <a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="summary-item" id="news-${i}">
                             <div class="item-icon"><i data-lucide="${icon}"></i></div>
                             <div class="item-content">
                                 <span class="item-title">${safeTitle}</span>
@@ -856,7 +925,7 @@
     function openSettings() {
         settingsPanel.classList.add('open');
         overlay.classList.add('active');
-        apiKeyInput.value = localStorage.getItem('posimai_api_key') || '';
+        apiKeyInput.value = localStorage.getItem('posimai-daily-apikey') || '';
     }
 
     function closeSettingsPanel() {
@@ -877,9 +946,14 @@
 
     saveSettings.addEventListener('click', () => {
         const newKey = apiKeyInput.value.trim();
-        if (newKey) localStorage.setItem('posimai_api_key', newKey);
-        else localStorage.removeItem('posimai_api_key');
+        if (newKey) localStorage.setItem('posimai-daily-apikey', newKey);
+        else localStorage.removeItem('posimai-daily-apikey');
         closeSettingsPanel();
+        fetchBriefing();
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeSettingsPanel();
     });
 
     // PWA Service Worker Registration
