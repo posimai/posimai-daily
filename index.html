@@ -7,6 +7,7 @@
     <meta name="color-scheme" content="dark light">
     <meta name="theme-color" content="#0D0D0D" media="(prefers-color-scheme: dark)">
     <meta name="theme-color" content="#F9FAFB" media="(prefers-color-scheme: light)">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Posimai Daily">
@@ -18,6 +19,11 @@
             // Theme setup
             const theme = localStorage.getItem('posimai-daily-theme') || 'dark';
             document.documentElement.setAttribute('data-theme', theme);
+            // APIキー名マイグレーション（旧: posimai_api_key → 新: posimai-daily-apikey）
+            const oldKey = localStorage.getItem('posimai_api_key');
+            if (oldKey && !localStorage.getItem('posimai-daily-apikey')) {
+                localStorage.setItem('posimai-daily-apikey', oldKey);
+            }
         })();
     </script>
 
@@ -740,10 +746,16 @@
     }
     initFallbackVoice();
 
-    // 現在再生中の Audio 要素
-    let audioEl = null;
-    // URL を使い終わったら開放（メモリリーク防止）
-    let currentBlobUrl = null;
+    // AudioContext — ユーザージェスチャー時に初期化・resume して Chrome の
+    // Autoplay Policy をクリアする。fetch の await 後でも再生可能になる。
+    let audioCtx = null;
+    let currentSource = null;
+
+    function getAudioContext() {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        return audioCtx;
+    }
 
     function preprocessSpeech(text) {
         if (!text) return '';
@@ -756,10 +768,13 @@
             .trim();
     }
 
-    // VOICEVOX API から WAV を取得して再生
+    // VOICEVOX API から WAV を取得して AudioContext で再生
+    // getAudioContext() を await より前に呼ぶことで Chrome の制限をパス
     async function fetchAndPlay(text) {
         const apiKey = localStorage.getItem('posimai-daily-apikey');
         if (!apiKey) throw new Error('no api key');
+
+        const ctx = getAudioContext(); // ← await より前・同期的に呼ぶ（重要）
 
         const res = await fetch(TTS_API, {
             method: 'POST',
@@ -772,22 +787,18 @@
 
         if (!res.ok) throw new Error(`TTS ${res.status}`);
 
-        const blob = await res.blob();
-        if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
-        currentBlobUrl = URL.createObjectURL(blob);
+        const arrayBuffer = await res.arrayBuffer();
+        const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
 
-        audioEl = new Audio(currentBlobUrl);
-        audioEl.onended = () => {
-            if (isPlaying) {
-                currentSpeechIndex++;
-                playNext();
-            }
+        if (currentSource) { try { currentSource.stop(); } catch(e) {} currentSource = null; }
+
+        currentSource = ctx.createBufferSource();
+        currentSource.buffer = audioBuffer;
+        currentSource.connect(ctx.destination);
+        currentSource.onended = () => {
+            if (isPlaying) { currentSpeechIndex++; playNext(); }
         };
-        audioEl.onerror = () => {
-            // WAV 再生失敗 → フォールバック
-            speakFallback(text);
-        };
-        await audioEl.play();
+        currentSource.start(0);
     }
 
     // ブラウザ TTS フォールバック
@@ -823,10 +834,7 @@
     function stopEffects() {
         clearInterval(waveInterval);
         clearInterval(particleInterval);
-        // VOICEVOX Audio を停止
-        if (audioEl) { audioEl.pause(); audioEl.src = ''; audioEl = null; }
-        if (currentBlobUrl) { URL.revokeObjectURL(currentBlobUrl); currentBlobUrl = null; }
-        // フォールバック TTS も停止
+        if (currentSource) { try { currentSource.stop(); } catch(e) {} currentSource = null; }
         window.speechSynthesis.cancel();
         updateWaveform();
     }
