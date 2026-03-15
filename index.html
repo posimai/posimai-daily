@@ -919,13 +919,13 @@
                 currentSpeechIndex = 0;
                 articles.forEach((a, i) => {
                     const prefix = i === 0 ? "最初のニュースです。" : "続いて。";
-                    const body = a.summary || a.title;
+                    const body = (a.title || '').substring(0, 60); // タイトルのみ・60字で打ち切り（合成時間短縮）
                     speechQueue.push(`${prefix}${escapeHTML(a.source) || '不明なソース'}より。${body}`);
                 });
                 speechQueue.push("本日のブリーフィングは以上です。");
 
                 // バックグラウンドウォームアップ — 再生前に VOICEVOX キャッシュを温める
-                const _wKey = localStorage.getItem('posimai_api_key') || '';
+                const _wKey = localStorage.getItem('posimai-daily-apikey') || '';
                 if (_wKey) {
                     const statusEl = document.getElementById('tts-status');
                     statusEl.textContent = '音声準備中...';
