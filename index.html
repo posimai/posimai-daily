@@ -6,16 +6,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Posimai Daily</title>
     
-    <!-- Theme Selection -->
+    <!-- Theme & Security Initialization (Prevent FOUC) -->
     <script>
         (function() {
-            const key = localStorage.getItem('posimai_api_key');
-            const urlParams = new URLSearchParams(window.location.search);
-            if (urlParams.has('init_key')) {
-                localStorage.setItem('posimai_api_key', urlParams.get('init_key'));
-                urlParams.delete('init_key');
-                window.history.replaceState({}, '', window.location.pathname + '?' + urlParams.toString());
-            }
+            // Theme setup
+            const theme = localStorage.getItem('posimai-daily-theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', theme);
         })();
     </script>
 
@@ -29,17 +25,32 @@
 
     <style>
         :root {
-            --bg: #030303;
-            --surface: rgba(20, 20, 20, 0.7);
-            --surface-bright: rgba(30, 30, 30, 0.8);
+            /* Design Tokens (Standard Posimai Dark) */
+            --bg: #0D0D0D;
+            --surface: rgba(26, 26, 26, 0.7);
+            --surface-bright: rgba(40, 40, 40, 0.8);
             --border: rgba(255, 255, 255, 0.08);
             --text: #FFFFFF;
             --text-dim: #999999;
-            --accent: #6EE7B7; /* Teal */
+            --accent: #6EE7B7;
             --accent-glow: rgba(110, 231, 183, 0.3);
             --accent-bg: rgba(110, 231, 183, 0.1);
-            --radius: 16px;
+            --radius: 8px; /* Fixed from 16px */
             --font-inter: 'Inter', sans-serif;
+            color-scheme: dark;
+        }
+
+        [data-theme="light"] {
+            --bg: #F9FAFB;
+            --surface: rgba(255, 255, 255, 0.7);
+            --surface-bright: rgba(255, 255, 255, 0.9);
+            --border: rgba(0, 0, 0, 0.08);
+            --text: #111827;
+            --text-dim: #6B7280;
+            --accent: #059669;
+            --accent-glow: rgba(5, 150, 105, 0.2);
+            --accent-bg: rgba(5, 150, 105, 0.05);
+            color-scheme: light;
         }
 
         * {
@@ -430,6 +441,82 @@
             pointer-events: none;
         }
 
+        /* ── Settings Panel ── */
+        .settings-panel {
+            position: fixed;
+            top: 0; right: 0; bottom: 0;
+            width: 300px;
+            background: var(--bg);
+            border-left: 1px solid var(--border);
+            z-index: 2000;
+            transform: translateX(100%);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            box-shadow: -20px 0 40px rgba(0,0,0,0.2);
+        }
+
+        .settings-panel.open { transform: translateX(0); }
+
+        .settings-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .settings-header h3 { font-size: 18px; font-weight: 700; }
+
+        .settings-section {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .settings-label {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-dim);
+        }
+
+        .settings-input {
+            width: 100%;
+            padding: 12px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            color: var(--text);
+            font-family: inherit;
+            font-size: 14px;
+            outline: none;
+        }
+
+        .settings-btn {
+            padding: 12px;
+            background: var(--accent);
+            color: #000;
+            border: none;
+            border-radius: var(--radius);
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            backdrop-filter: blur(4px);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+            z-index: 1999;
+        }
+
+        .overlay.active { opacity: 1; pointer-events: all; }
     </style>
 </head>
 <body>
@@ -499,15 +586,39 @@
         <div class="nav-icon-bg"><i data-lucide="mic" style="width: 20px;"></i></div>
         <span>Brief</span>
     </button>
-    <button class="nav-btn">
+    <button class="nav-btn" id="echoNav">
         <div class="nav-icon-bg"><i data-lucide="brain" style="width: 20px;"></i></div>
         <span>Echo</span>
     </button>
-    <button class="nav-btn">
+    <button class="nav-btn" id="settingsNav">
         <div class="nav-icon-bg"><i data-lucide="settings" style="width: 20px;"></i></div>
         <span>Setup</span>
     </button>
 </nav>
+
+<div class="overlay" id="overlay"></div>
+<aside class="settings-panel" id="settingsPanel">
+    <div class="settings-header">
+        <h3>Settings</h3>
+        <button class="control-btn" id="closeSettings"><i data-lucide="x"></i></button>
+    </div>
+
+    <div class="settings-section">
+        <span class="settings-label">Security</span>
+        <input type="password" id="apiKeyInput" class="settings-input" placeholder="Posimai API Key">
+    </div>
+
+    <div class="settings-section">
+        <span class="settings-label">Appearance</span>
+        <button class="settings-btn" id="themeToggle" style="background: var(--surface); color: var(--text); border: 1px solid var(--border);">
+            Switch Theme
+        </button>
+    </div>
+
+    <div style="margin-top: auto;">
+        <button class="settings-btn" style="width: 100%;" id="saveSettings">Save Changes</button>
+    </div>
+</aside>
 
 <script>
     lucide.createIcons();
@@ -675,7 +786,7 @@
                             <div class="item-icon"><i data-lucide="${icon}"></i></div>
                             <div class="item-content">
                                 <span class="item-title">${a.title}</span>
-                                <span class="item-meta">${a.source} • ${Math.floor(Math.random() * 5 + 2)} min brief</span>
+                                <span class="item-meta">${a.source} • 2 min brief</span>
                             </div>
                             <i data-lucide="chevron-right" style="width: 14px; color: var(--border);"></i>
                         </a>
@@ -703,20 +814,48 @@
 
     fetchBriefing();
 
-    // PWA Service Worker Registration
-    if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-            navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW failed:', err));
-        });
+    // Settings Panel Logic
+    const settingsPanel = document.getElementById('settingsPanel');
+    const overlay = document.getElementById('overlay');
+    const settingsNav = document.getElementById('settingsNav');
+    const closeSettings = document.getElementById('closeSettings');
+    const themeToggle = document.getElementById('themeToggle');
+    const saveSettings = document.getElementById('saveSettings');
+    const apiKeyInput = document.getElementById('apiKeyInput');
+
+    function openSettings() {
+        settingsPanel.classList.add('open');
+        overlay.classList.add('active');
+        apiKeyInput.value = localStorage.getItem('posimai_api_key') || '';
     }
-</script>
+
+    function closeSettingsPanel() {
+        settingsPanel.classList.remove('open');
+        overlay.classList.remove('active');
+    }
+
+    settingsNav.addEventListener('click', openSettings);
+    closeSettings.addEventListener('click', closeSettingsPanel);
+    overlay.addEventListener('click', closeSettingsPanel);
+
+    themeToggle.addEventListener('click', () => {
+        const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', newTheme);
+        localStorage.setItem('posimai-daily-theme', newTheme);
+    });
+
+    saveSettings.addEventListener('click', () => {
+        const newKey = apiKeyInput.value.trim();
+        if (newKey) localStorage.setItem('posimai_api_key', newKey);
+        else localStorage.removeItem('posimai_api_key');
+        closeSettingsPanel();
+    });
 
     // PWA Service Worker Registration
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-            navigator.serviceWorker.register('/sw.js').then(reg => {
-                console.log('SW registered:', reg);
-            }).catch(err => console.log('SW failed:', err));
+            navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW failed:', err));
         });
     }
 </script>
