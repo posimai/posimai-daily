@@ -26,6 +26,7 @@ module.exports = async function handler(req, res) {
           hostname: 'posimai-lab.tail72e846.ts.net',
           path: '/brain/api/tts',
           method: 'POST',
+          family: 4, // IPv6 での TLS ハンドシェイク失敗を回避
           headers: {
             'Content-Type': 'application/json',
             'Content-Length': Buffer.byteLength(body),
