@@ -1,0 +1,9 @@
+{
+  "name": "posimai-daily",
+  "version": "1.0.0",
+  "description": "Posimai Daily - The 1-Minute Stream",
+  "private": true,
+  "scripts": {
+    "deploy": "git add . && git commit -m 'feat: update posimai-daily' && npm run deploy-root"
+  }
+}
