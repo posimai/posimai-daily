@@ -924,19 +924,44 @@
                 });
                 speechQueue.push("本日のブリーフィングは以上です。");
 
-                // バックグラウンドウォームアップ — 再生前に VOICEVOX キャッシュを温める
+                // バックグラウンドウォームアップ + ポーリングで実際の完了を検知
                 const _wKey = localStorage.getItem('posimai-daily-apikey') || '';
                 if (_wKey) {
                     const statusEl = document.getElementById('tts-status');
-                    statusEl.textContent = '音声準備中...';
-                    fetch(TTS_API.replace(/\/tts$/, '/tts/warmup'), {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${_wKey}` },
-                        body: JSON.stringify({ texts: speechQueue, speaker: TTS_SPEAKER })
-                    }).then(() => {
-                        statusEl.textContent = '音声準備完了';
-                        setTimeout(() => { statusEl.textContent = ''; }, 3000);
-                    }).catch(() => { statusEl.textContent = ''; });
+                    const warmupUrl = TTS_API.replace(/\/tts$/, '/tts/warmup');
+                    const readyUrl  = TTS_API.replace(/\/tts$/, '/tts/ready');
+                    const queueSnapshot = [...speechQueue];
+                    const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${_wKey}` };
+
+                    statusEl.textContent = `音声準備中... 0/${queueSnapshot.length}`;
+
+                    // ウォームアップ開始（fire-and-forget）
+                    fetch(warmupUrl, {
+                        method: 'POST', headers,
+                        body: JSON.stringify({ texts: queueSnapshot, speaker: TTS_SPEAKER })
+                    }).catch(() => {});
+
+                    // 8秒ごとにキャッシュ完了数を確認
+                    let _pollTimer = null;
+                    const pollReady = async () => {
+                        try {
+                            const r = await fetch(readyUrl, {
+                                method: 'POST', headers,
+                                body: JSON.stringify({ texts: queueSnapshot, speaker: TTS_SPEAKER })
+                            });
+                            const d = await r.json();
+                            if (d.ready) {
+                                statusEl.textContent = '音声準備完了';
+                                setTimeout(() => { statusEl.textContent = ''; }, 4000);
+                            } else {
+                                statusEl.textContent = `音声準備中... ${d.cached}/${d.total}`;
+                                _pollTimer = setTimeout(pollReady, 8000);
+                            }
+                        } catch (e) {
+                            statusEl.textContent = '';
+                        }
+                    };
+                    _pollTimer = setTimeout(pollReady, 8000);
                 }
 
                 const iconMap = { tech: 'code', lifestyle: 'coffee', news: 'newspaper' };
