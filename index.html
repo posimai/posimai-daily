@@ -78,6 +78,7 @@
             letter-spacing: -0.03em;
             background: linear-gradient(to bottom, #fff, #999);
             -webkit-background-clip: text;
+            background-clip: text;
             -webkit-text-fill-color: transparent;
         }
 
@@ -556,18 +557,65 @@
     let isPlaying = false;
     let waveInterval;
     let particleInterval;
+    let speechQueue = [];
+    let currentSpeechIndex = 0;
+    let syntheticVoice = null;
+
+    // Initialize Audio Engine (find Japanese voice)
+    function initSpeech() {
+        const voices = window.speechSynthesis.getVoices();
+        syntheticVoice = voices.find(v => v.lang.includes('ja-JP')) || voices[0];
+    }
+    if (window.speechSynthesis.onvoiceschanged !== undefined) {
+        window.speechSynthesis.onvoiceschanged = initSpeech;
+    }
+    initSpeech();
+
+    function speak(text) {
+        if (!text) return;
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.voice = syntheticVoice;
+        utter.rate = 1.05; // Slightly faster for premium feel
+        utter.pitch = 1.0;
+        
+        utter.onend = () => {
+            if (isPlaying) {
+                currentSpeechIndex++;
+                if (currentSpeechIndex < speechQueue.length) {
+                    speak(speechQueue[currentSpeechIndex]);
+                } else {
+                    // Reached end
+                    isPlaying = false;
+                    stopEffects();
+                    updateButtonUI();
+                }
+            }
+        };
+        window.speechSynthesis.speak(utter);
+    }
+
+    function updateButtonUI() {
+        playInner.innerHTML = `<i data-lucide="${isPlaying ? 'pause' : 'play'}" style="fill: #000; width: 32px; height: 32px;"></i>`;
+        lucide.createIcons();
+    }
+
+    function stopEffects() {
+        clearInterval(waveInterval);
+        clearInterval(particleInterval);
+        window.speechSynthesis.cancel();
+        updateWaveform();
+    }
 
     function updateWaveform() {
         bars.forEach((bar, i) => {
             const baseH = isPlaying ? Math.random() * 50 + 15 : 12;
             bar.style.height = `${baseH}px`;
             
-            // Random aggressive flickering (Glitter)
             if (isPlaying) {
                 const rand = Math.random();
                 if (rand > 0.85) {
                     bar.classList.add('sparkle');
-                    bar.style.height = `${baseH + 20}px`; // Pop up higher
+                    bar.style.height = `${baseH + 20}px`;
                 } else if (rand > 0.7) {
                     bar.classList.add('glitter');
                 } else {
@@ -581,18 +629,19 @@
 
     playBtn.addEventListener('click', () => {
         isPlaying = !isPlaying;
-        
-        // Icon toggle
-        playInner.innerHTML = `<i data-lucide="${isPlaying ? 'pause' : 'play'}" style="fill: #000; width: 32px; height: 32px;"></i>`;
-        lucide.createIcons();
+        updateButtonUI();
         
         if (isPlaying) {
-            waveInterval = setInterval(updateWaveform, 60); // Faster updates for energy
-            particleInterval = setInterval(createParticle, 40); // Constant stream of sparkles
+            waveInterval = setInterval(updateWaveform, 60);
+            particleInterval = setInterval(createParticle, 40);
+            
+            // Start or resume audio
+            if (speechQueue.length > 0) {
+                if (currentSpeechIndex >= speechQueue.length) currentSpeechIndex = 0;
+                speak(speechQueue[currentSpeechIndex]);
+            }
         } else {
-            clearInterval(waveInterval);
-            clearInterval(particleInterval);
-            updateWaveform();
+            stopEffects();
         }
     });
 
@@ -602,7 +651,6 @@
         const summaryTitle = document.getElementById('summary-title');
         
         try {
-            // Fetch real articles from posimai-feed
             const response = await fetch('https://posimai-feed.vercel.app/api/feed');
             const data = await response.json();
             
@@ -610,13 +658,20 @@
                 const articles = data.articles.slice(0, 3);
                 summaryTitle.innerText = `Morning Recap`;
                 
+                // Build speech queue
+                speechQueue = ["おはようございます。本日のニュースブリーフィングを開始します。"];
+                articles.forEach(a => {
+                    speechQueue.push(`続いて、${a.source}より。${a.title}`);
+                });
+                speechQueue.push("以上、本日のブリーフィングでした。よい一日を。");
+
                 list.innerHTML = articles.map((a, i) => {
                     let icon = 'layout-list';
                     if (a.category === 'tech') icon = 'code';
                     if (a.category === 'lifestyle') icon = 'coffee';
                     
                     return `
-                        <a href="${a.url}" target="_blank" class="summary-item">
+                        <a href="${a.url}" target="_blank" class="summary-item" id="news-${i}">
                             <div class="item-icon"><i data-lucide="${icon}"></i></div>
                             <div class="item-content">
                                 <span class="item-title">${a.title}</span>
@@ -627,7 +682,6 @@
                     `;
                 }).join('');
 
-                // Add static placeholders for Echo/Weather if real APIs aren't ready
                 list.innerHTML += `
                     <a href="#" class="summary-item" style="opacity: 0.7;">
                         <div class="item-icon"><i data-lucide="cloud-sun"></i></div>
@@ -639,7 +693,7 @@
                 `;
 
                 lucide.createIcons();
-                document.getElementById('time-total').innerText = '5:20'; // Simulated total length
+                document.getElementById('time-total').innerText = '5:20';
             }
         } catch (e) {
             console.error('Failed to fetch briefing:', e);
