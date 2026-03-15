@@ -530,6 +530,26 @@
         }
 
         .overlay.active { opacity: 1; pointer-events: all; }
+
+        .speaker-btn {
+            width: 100%;
+            padding: 10px 12px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            color: var(--text);
+            font-family: inherit;
+            font-size: 13px;
+            text-align: left;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .speaker-btn:hover { background: var(--surface-bright); }
+        .speaker-btn.active {
+            border-color: var(--accent);
+            color: var(--accent);
+            background: var(--accent-bg);
+        }
     </style>
 </head>
 <body>
@@ -622,6 +642,18 @@
     </div>
 
     <div class="settings-section">
+        <span class="settings-label">読み上げ話者</span>
+        <div id="speakerBtns" style="display:flex; flex-direction:column; gap:6px;">
+            <button class="speaker-btn" data-id="1">ずんだもん（明るい）</button>
+            <button class="speaker-btn" data-id="3">ずんだもん（甘め）</button>
+            <button class="speaker-btn" data-id="0">四国めたん（ノーマル）</button>
+            <button class="speaker-btn" data-id="2">四国めたん（甘め）</button>
+            <button class="speaker-btn" data-id="8">春日部つむぎ</button>
+            <button class="speaker-btn" data-id="13">波音リツ</button>
+        </div>
+    </div>
+
+    <div class="settings-section">
         <span class="settings-label">テーマ</span>
         <button class="settings-btn" id="themeToggle" style="background: var(--surface); color: var(--text); border: 1px solid var(--border);">
             テーマ切り替え
@@ -686,7 +718,7 @@
     // 優先: Synology VOICEVOX API → フォールバック: ブラウザ Web Speech API
 
     const TTS_API = 'https://posimai-lab.tail72e846.ts.net/brain/api/tts';
-    const TTS_SPEAKER = 1; // VOICEVOX 話者ID (1: ずんだもん ノーマル)
+    let TTS_SPEAKER = parseInt(localStorage.getItem('posimai-daily-speaker') || '1', 10);
 
     // Play/Pause State
     const playBtn = document.getElementById('playBtn');
@@ -854,7 +886,8 @@
             
             // Correct API: Synology Brain API (Latest Articles)
             const response = await fetch('https://posimai-lab.tail72e846.ts.net/brain/api/articles', {
-                headers: headers
+                headers: headers,
+                cache: 'no-store'
             });
 
             if (response.status === 401) {
@@ -922,10 +955,24 @@
     const saveSettings = document.getElementById('saveSettings');
     const apiKeyInput = document.getElementById('apiKeyInput');
 
+    function updateSpeakerUI() {
+        document.querySelectorAll('.speaker-btn').forEach(btn => {
+            btn.classList.toggle('active', parseInt(btn.dataset.id) === TTS_SPEAKER);
+        });
+    }
+
+    document.querySelectorAll('.speaker-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            TTS_SPEAKER = parseInt(btn.dataset.id);
+            updateSpeakerUI();
+        });
+    });
+
     function openSettings() {
         settingsPanel.classList.add('open');
         overlay.classList.add('active');
         apiKeyInput.value = localStorage.getItem('posimai-daily-apikey') || '';
+        updateSpeakerUI();
     }
 
     function closeSettingsPanel() {
@@ -948,6 +995,7 @@
         const newKey = apiKeyInput.value.trim();
         if (newKey) localStorage.setItem('posimai-daily-apikey', newKey);
         else localStorage.removeItem('posimai-daily-apikey');
+        localStorage.setItem('posimai-daily-speaker', String(TTS_SPEAKER));
         closeSettingsPanel();
         fetchBriefing();
     });
