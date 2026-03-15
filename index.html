@@ -750,6 +750,7 @@
     // Autoplay Policy をクリアする。fetch の await 後でも再生可能になる。
     let audioCtx = null;
     let currentSource = null;
+    let fetchAbortController = null; // 進行中の fetch をキャンセルするため
 
     function getAudioContext() {
         if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -771,10 +772,15 @@
     // VOICEVOX API から WAV を取得して AudioContext で再生
     // getAudioContext() を await より前に呼ぶことで Chrome の制限をパス
     async function fetchAndPlay(text) {
+        if (!isPlaying) return; // 停止済みなら即抜ける
         const apiKey = localStorage.getItem('posimai-daily-apikey');
         if (!apiKey) throw new Error('no api key');
 
         const ctx = getAudioContext(); // ← await より前・同期的に呼ぶ（重要）
+
+        // 前の fetch があればキャンセル
+        if (fetchAbortController) fetchAbortController.abort();
+        fetchAbortController = new AbortController();
 
         const res = await fetch(TTS_API, {
             method: 'POST',
@@ -782,13 +788,18 @@
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${apiKey}`
             },
-            body: JSON.stringify({ text: preprocessSpeech(text), speaker: TTS_SPEAKER })
+            body: JSON.stringify({ text: preprocessSpeech(text), speaker: TTS_SPEAKER }),
+            signal: fetchAbortController.signal
         });
 
+        if (!isPlaying) return; // fetch 完了時点で停止済みなら再生しない
         if (!res.ok) throw new Error(`TTS ${res.status}`);
 
         const arrayBuffer = await res.arrayBuffer();
+        if (!isPlaying) return; // decode 前にも確認
+
         const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+        if (!isPlaying) return; // decode 後にも確認
 
         if (currentSource) { try { currentSource.stop(); } catch(e) {} currentSource = null; }
 
@@ -823,7 +834,10 @@
             return;
         }
         const text = speechQueue[currentSpeechIndex];
-        fetchAndPlay(text).catch(() => speakFallback(text));
+        fetchAndPlay(text).catch(e => {
+            if (!isPlaying || e.name === 'AbortError') return; // 停止 or キャンセルなら無視
+            speakFallback(text);
+        });
     }
 
     function updateButtonUI() {
@@ -834,6 +848,7 @@
     function stopEffects() {
         clearInterval(waveInterval);
         clearInterval(particleInterval);
+        if (fetchAbortController) { fetchAbortController.abort(); fetchAbortController = null; }
         if (currentSource) { try { currentSource.stop(); } catch(e) {} currentSource = null; }
         window.speechSynthesis.cancel();
         updateWaveform();
