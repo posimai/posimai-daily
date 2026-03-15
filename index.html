@@ -600,6 +600,7 @@
             </div>
             <span class="time" id="time-total">--:--</span>
         </div>
+        <div id="tts-status" style="text-align:center; font-size:11px; color: var(--text-dim); margin-top:4px; min-height:14px; letter-spacing:0.02em;"></div>
     </div>
 
     <section class="summary-section">
@@ -877,6 +878,7 @@
 
     playBtn.addEventListener('click', () => {
         isPlaying = !isPlaying;
+        document.getElementById('tts-status').textContent = '';
         updateButtonUI();
         
         if (isPlaying) {
@@ -921,6 +923,21 @@
                     speechQueue.push(`${prefix}${escapeHTML(a.source) || '不明なソース'}より。${body}`);
                 });
                 speechQueue.push("本日のブリーフィングは以上です。");
+
+                // バックグラウンドウォームアップ — 再生前に VOICEVOX キャッシュを温める
+                const _wKey = localStorage.getItem('posimai_api_key') || '';
+                if (_wKey) {
+                    const statusEl = document.getElementById('tts-status');
+                    statusEl.textContent = '音声準備中...';
+                    fetch(TTS_API.replace(/\/tts$/, '/tts/warmup'), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${_wKey}` },
+                        body: JSON.stringify({ texts: speechQueue, speaker: TTS_SPEAKER })
+                    }).then(() => {
+                        statusEl.textContent = '音声準備完了';
+                        setTimeout(() => { statusEl.textContent = ''; }, 3000);
+                    }).catch(() => { statusEl.textContent = ''; });
+                }
 
                 const iconMap = { tech: 'code', lifestyle: 'coffee', news: 'newspaper' };
 
