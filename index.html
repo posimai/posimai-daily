@@ -723,7 +723,7 @@
     // ── 音声エンジン ──────────────────────────────────────────────────
     // 優先: Synology VOICEVOX API → フォールバック: ブラウザ Web Speech API
 
-    const TTS_API = 'https://posimai-lab.tail72e846.ts.net/brain/api/tts';
+    const TTS_API = '/api/tts';
     let TTS_SPEAKER = parseInt(localStorage.getItem('posimai-daily-speaker') || '1', 10);
 
     // Play/Pause State
