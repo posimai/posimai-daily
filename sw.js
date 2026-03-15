@@ -15,8 +15,8 @@ self.addEventListener('install', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   
-  // Network-First for API and external briefing sources
-  if (url.pathname.includes('/api/') || url.hostname.includes('vercel.app')) {
+  // Network-First for external API and briefing sources (exclude self)
+  if ((url.pathname.includes('/api/') || url.hostname.includes('vercel.app')) && url.hostname !== location.hostname) {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
