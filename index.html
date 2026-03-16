@@ -652,6 +652,11 @@
     </div>
 
     <div class="settings-section">
+        <span class="settings-label">使用中の読み上げ音声</span>
+        <span id="voiceLabel" style="font-size:12px; color:var(--text-dim);">確認中...</span>
+    </div>
+
+    <div class="settings-section">
         <span class="settings-label">テーマ</span>
         <button class="settings-btn" id="themeToggle" style="background: var(--surface); color: var(--text); border: 1px solid var(--border);">
             テーマ切り替え
@@ -727,20 +732,29 @@
     let speechQueue = [];
     let currentSpeechIndex = 0;
 
-    // フォールバック用ブラウザ音声（Natural 音声を優先選択）
+    // ブラウザ音声を品質優先で選択
+    // 優先順: 1.クラウド配信(localService=false) 2.Enhanced/Natural等キーワード 3.任意の日本語音声
     let bestVoice = null;
     function initBestVoice() {
         const voices = window.speechSynthesis.getVoices();
-        const jaVoices = voices.filter(v => v.lang.startsWith('ja'));
-        const keywords = ['Natural', 'Neural', 'Premium', 'Nanami', 'Online'];
-        
-        bestVoice = keywords.reduce((found, kw) => 
-            found || jaVoices.find(v => v.name.includes(kw)), null) 
-            || jaVoices[0];
+        if (!voices.length) return;
+        const ja = voices.filter(v => v.lang.startsWith('ja'));
+        if (!ja.length) return;
+
+        // 1. クラウド配信音声（Chrome: Google 日本語 / Edge: Microsoft Nanami Online）
+        const online = ja.find(v => !v.localService);
+        if (online) { bestVoice = online; return; }
+
+        // 2. 名前にキーワードを含む高品質音声
+        for (const kw of ['Natural', 'Enhanced', 'Neural', 'Premium', 'Nanami', 'Online']) {
+            const match = ja.find(v => v.name.includes(kw));
+            if (match) { bestVoice = match; return; }
+        }
+
+        // 3. 最初の日本語音声（フォールバック）
+        bestVoice = ja[0];
     }
-    if (window.speechSynthesis.onvoiceschanged !== undefined) {
-        window.speechSynthesis.onvoiceschanged = initBestVoice;
-    }
+    window.speechSynthesis.onvoiceschanged = initBestVoice;
     initBestVoice();
 
     // AudioContext — ユーザージェスチャー時に初期化・resume して Chrome の
@@ -1086,6 +1100,8 @@
         overlay.classList.add('active');
         apiKeyInput.value = localStorage.getItem('posimai-daily-apikey') || '';
         updateSpeakerUI();
+        document.getElementById('voiceLabel').textContent =
+            bestVoice ? bestVoice.name : '日本語音声が見つかりません';
     }
 
     function closeSettingsPanel() {
