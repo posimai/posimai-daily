@@ -1,4 +1,4 @@
-const CACHE_NAME = 'posimai-daily-v5';
+const CACHE_NAME = 'posimai-daily-v6';
 const ASSETS = [
   '/',
   '/index.html',

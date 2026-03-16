@@ -584,22 +584,17 @@
         </div>
 
         <div class="progress-container">
-            <span class="time" id="time-current">0:00</span>
+            <span class="time" id="time-current">—</span>
             <div class="progress-track">
                 <div class="progress-bar" id="progress-bar"></div>
                 <div class="progress-handle" id="progress-handle"></div>
             </div>
-            <span class="time" id="time-total">0:00</span>
+            <span class="time" id="time-total">—</span>
         </div>
         <div id="tts-status" style="text-align:center; font-size:11px; color: var(--text-dim); margin-top:4px; min-height:14px; letter-spacing:0.02em;"></div>
     </div>
 
     <section class="summary-section">
-        <div class="summary-header">
-            <span class="summary-subtitle">Morning Stream</span>
-            <h3 class="summary-title" id="summary-title">Summary</h3>
-        </div>
-
         <div id="summary-items-list" style="display: flex; flex-direction: column; gap: 10px;">
             <div class="loading-shimmer"></div>
             <div class="loading-shimmer"></div>
@@ -648,6 +643,16 @@
             <button class="speaker-btn" data-id="2">四国めたん（甘め）</button>
             <button class="speaker-btn" data-id="8">春日部つむぎ</button>
             <button class="speaker-btn" data-id="13">波音リツ</button>
+        </div>
+    </div>
+
+    <div class="settings-section">
+        <span class="settings-label">読み上げ速度</span>
+        <div style="display:flex; gap:8px;">
+            <button class="speaker-btn rate-btn" data-rate="0.8">遅め</button>
+            <button class="speaker-btn rate-btn" data-rate="1.0">普通</button>
+            <button class="speaker-btn rate-btn" data-rate="1.2">速め</button>
+            <button class="speaker-btn rate-btn" data-rate="1.5">かなり速め</button>
         </div>
     </div>
 
@@ -722,6 +727,7 @@
 
     const TTS_API = 'https://posimai-lab.tail72e846.ts.net/brain/api/tts';
     let TTS_SPEAKER = parseInt(localStorage.getItem('posimai-daily-speaker') || '1', 10);
+    let TTS_RATE = parseFloat(localStorage.getItem('posimai-daily-rate') || '1.0');
 
     // Play/Pause State
     const playBtn = document.getElementById('playBtn');
@@ -830,7 +836,7 @@
         
         const utter = new SpeechSynthesisUtterance(preprocessSpeech(text));
         utter.voice = bestVoice;
-        utter.rate = 1.0; 
+        utter.rate = TTS_RATE;
 
         // Update UI progress - estimate based on characters vs total if needed, 
         // but for now we update time-current on 'boundary' or just per article
@@ -855,26 +861,18 @@
     }
 
     function updateActiveItem(index) {
-        // Highlight current news item in the list
         document.querySelectorAll('.summary-item').forEach((item, i) => {
             item.style.borderColor = (i === index) ? 'var(--accent)' : 'transparent';
             item.style.background = (i === index) ? 'var(--accent-bg)' : 'rgba(255,255,255,0.02)';
         });
-        
-        // Update Time display (Simplified: 1 min per article for total, show current index)
-        const totalSec = speechQueue.length * 60;
-        const currentSec = index * 60;
-        document.getElementById('time-current').innerText = formatTime(currentSec);
-        
-        const progress = (index / speechQueue.length) * 100;
+        // 記事番号を表示（時間ではなく「N / 5」形式）
+        const total = speechQueue.filter((_, i) => i < speechQueue.length - 1).length; // 締め文を除く
+        const displayIndex = Math.min(index + 1, total); // 1始まり
+        document.getElementById('time-current').innerText = `${displayIndex}`;
+        document.getElementById('time-total').innerText = `/ ${total}`;
+        const progress = speechQueue.length > 1 ? (index / (speechQueue.length - 1)) * 100 : 0;
         document.getElementById('progress-bar').style.width = `${progress}%`;
         document.getElementById('progress-handle').style.left = `${progress}%`;
-    }
-
-    function formatTime(sec) {
-        const m = Math.floor(sec / 60);
-        const s = sec % 60;
-        return `${m}:${s < 10 ? '0' : ''}${s}`;
     }
 
     function skipArticle(dir) {
@@ -961,10 +959,8 @@
     // Feed API から最新 RSS 記事を取得（Feed アプリと同一ソース）
     async function fetchBriefing() {
         const list = document.getElementById('summary-items-list');
-        const summaryTitle = document.getElementById('summary-title');
 
         try {
-            // posimai-feed の公開 API — 認証不要・常に最新 RSS を返す
             const response = await fetch('https://posimai-feed.vercel.app/api/feed', {
                 cache: 'no-store'
             });
@@ -974,8 +970,7 @@
             const data = await response.json();
 
             if (data.articles && Array.isArray(data.articles) && data.articles.length > 0) {
-                const articles = data.articles.slice(0, 5); // 最大5件
-                summaryTitle.innerText = 'Morning Stream';
+                const articles = data.articles.slice(0, 5);
 
                 // 読み上げキューを構築
                 speechQueue = [];
@@ -1049,7 +1044,6 @@
                 }).join('');
 
                 lucide.createIcons();
-                document.getElementById('time-total').innerText = `${articles.length}:00`;
                 // 進捗バーを0%にリセット（ハイライトはしない）
                 document.getElementById('progress-bar').style.width = '0%';
                 document.getElementById('progress-handle').style.left = '0%';
@@ -1083,10 +1077,20 @@
     const apiKeyInput = document.getElementById('apiKeyInput');
 
     function updateSpeakerUI() {
-        document.querySelectorAll('.speaker-btn').forEach(btn => {
+        document.querySelectorAll('.speaker-btn[data-id]').forEach(btn => {
             btn.classList.toggle('active', parseInt(btn.dataset.id) === TTS_SPEAKER);
         });
+        document.querySelectorAll('.rate-btn').forEach(btn => {
+            btn.classList.toggle('active', parseFloat(btn.dataset.rate) === TTS_RATE);
+        });
     }
+
+    document.querySelectorAll('.rate-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            TTS_RATE = parseFloat(btn.dataset.rate);
+            updateSpeakerUI();
+        });
+    });
 
     document.querySelectorAll('.speaker-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -1125,6 +1129,7 @@
         if (newKey) localStorage.setItem('posimai-daily-apikey', newKey);
         else localStorage.removeItem('posimai-daily-apikey');
         localStorage.setItem('posimai-daily-speaker', String(TTS_SPEAKER));
+        localStorage.setItem('posimai-daily-rate', String(TTS_RATE));
         closeSettingsPanel();
         fetchBriefing();
     });
