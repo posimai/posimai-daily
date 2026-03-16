@@ -340,10 +340,9 @@
             -webkit-backdrop-filter: blur(20px);
             border: 1px solid var(--border);
             border-radius: calc(var(--radius) * 2);
-            padding: 24px;
+            padding: 20px;
             display: flex;
             flex-direction: column;
-            gap: 20px;
             box-shadow: 0 20px 40px rgba(0,0,0,0.3);
         }
 
@@ -358,44 +357,38 @@
 
         .summary-item {
             display: flex;
-            align-items: center;
-            gap: 14px;
-            padding: 14px;
-            background: rgba(255,255,255,0.02);
-            border: 1px solid transparent;
-            border-radius: var(--radius);
-            color: inherit;        /* <a>タグのデフォルト青を無効化 */
-            text-decoration: none; /* 下線も無効化 */
+            flex-direction: column;
+            gap: 3px;
+            padding: 10px 0;
+            border-bottom: 1px solid var(--border);
+            color: inherit;
+            text-decoration: none;
+            opacity: 0.45;
+            transition: opacity 0.3s ease;
         }
 
-        .summary-item:hover { 
-            background: rgba(255,255,255,0.05); 
-            border-color: var(--border);
-            transform: translateX(4px);
+        .summary-item:last-child { border-bottom: none; }
+
+        .summary-item:hover { opacity: 0.75; }
+
+        .summary-item.playing {
+            opacity: 1;
         }
 
-        .item-icon {
-            width: 40px; height: 40px;
-            background: var(--accent-bg);
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+        .summary-item.playing .item-title {
             color: var(--accent);
-            flex-shrink: 0;
-            box-shadow: inset 0 0 10px rgba(110,231,183,0.1);
         }
 
-        .item-content { flex: 1; display: flex; flex-direction: column; gap: 2px; }
-        .item-title { font-size: 14px; font-weight: 600; line-height: 1.3; }
-        .item-meta { font-size: 11px; color: var(--text-dim); font-weight: 500; }
+        .item-content { display: flex; flex-direction: column; gap: 3px; }
+        .item-title { font-size: 13px; font-weight: 400; line-height: 1.4; transition: color 0.3s ease; }
+        .item-meta { font-size: 11px; color: var(--text3, var(--text-dim)); font-weight: 300; }
 
         .loading-shimmer {
-            height: 60px;
+            height: 44px;
             background: linear-gradient(90deg, transparent, rgba(255,255,255,0.03), transparent);
             background-size: 200% 100%;
             animation: shimmer 1.5s infinite;
-            border-radius: 16px;
+            border-radius: 4px;
         }
 
         @keyframes shimmer {
@@ -573,7 +566,6 @@
         <div class="particles-container" id="particles"></div>
         <div class="secondary-controls">
             <button class="control-btn"><i data-lucide="skip-back" style="width:24px;height:24px"></i></button>
-            <button class="control-btn"><i data-lucide="rotate-ccw" style="width:24px;height:24px"></i></button>
             <button class="play-main" id="playBtn">
                 <div class="play-inner">
                     <i data-lucide="play" id="playIcon" style="fill: #000; width: 32px; height: 32px;"></i>
@@ -848,12 +840,11 @@
 
     function updateActiveItem(index) {
         document.querySelectorAll('.summary-item').forEach((item, i) => {
-            item.style.borderColor = (i === index) ? 'var(--accent)' : 'transparent';
-            item.style.background = (i === index) ? 'var(--accent-bg)' : 'rgba(255,255,255,0.02)';
+            item.classList.toggle('playing', i === index);
         });
-        // 記事番号を表示（時間ではなく「N / 5」形式）
-        const total = speechQueue.filter((_, i) => i < speechQueue.length - 1).length; // 締め文を除く
-        const displayIndex = Math.min(index + 1, total); // 1始まり
+        // 記事番号を表示（「N / 5」形式）
+        const total = speechQueue.length - 1; // 締め文を除く
+        const displayIndex = Math.min(index + 1, total);
         document.getElementById('time-current').innerText = `${displayIndex}`;
         document.getElementById('time-total').innerText = `/ ${total}`;
         const progress = speechQueue.length > 1 ? (index / (speechQueue.length - 1)) * 100 : 0;
@@ -965,10 +956,7 @@
                 });
                 speechQueue.push("本日のブリーフィングは以上です。");
 
-                const iconMap = { tech: 'code', lifestyle: 'coffee', news: 'newspaper' };
-
                 list.innerHTML = articles.map((a, i) => {
-                    const icon = iconMap[a.category] || 'layout-list';
                     const safeTitle = escapeHTML(a.title);
                     const safeSource = escapeHTML(a.source || '不明なソース');
                     const safeUrl = escapeHTML(a.url);
@@ -976,17 +964,13 @@
 
                     return `
                         <a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="summary-item" id="news-${i}">
-                            <div class="item-icon"><i data-lucide="${icon}"></i></div>
                             <div class="item-content">
                                 <span class="item-title">${safeTitle}</span>
                                 <span class="item-meta">${safeSource}${timeAgo ? ' • ' + timeAgo : ''}</span>
                             </div>
-                            <i data-lucide="chevron-right" style="width: 14px; color: var(--border);"></i>
                         </a>
                     `;
                 }).join('');
-
-                lucide.createIcons();
                 // 進捗バーを0%にリセット（ハイライトはしない）
                 document.getElementById('progress-bar').style.width = '0%';
                 document.getElementById('progress-handle').style.left = '0%';
@@ -1073,12 +1057,6 @@
     // Playback Button Listeners
     document.querySelector('[data-lucide="skip-back"]').parentElement.addEventListener('click', () => skipArticle(-1));
     document.querySelector('[data-lucide="skip-forward"]').parentElement.addEventListener('click', () => skipArticle(1));
-    // rotate-ccw = 現在の記事を頭から再再生
-    document.querySelector('[data-lucide="rotate-ccw"]').parentElement.addEventListener('click', () => {
-        if (!isPlaying) return;
-        window.speechSynthesis.cancel();
-        playNext();
-    });
 
     // Progress Track Interaction
     document.querySelector('.progress-track').addEventListener('click', (e) => {
