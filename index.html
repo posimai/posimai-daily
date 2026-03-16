@@ -625,6 +625,11 @@
     </div>
 
     <div class="settings-section">
+        <span class="settings-label">API エンドポイント</span>
+        <input type="url" id="apiBaseInput" class="settings-input" placeholder="https://your-nas.ts.net/brain/api">
+    </div>
+
+    <div class="settings-section">
         <span class="settings-label">読み上げ速度</span>
         <div style="display:flex; gap:8px;">
             <button class="speaker-btn rate-btn" data-rate="0.8" style="flex:1; width:auto; text-align:center; padding:10px 4px;">遅め</button>
@@ -703,7 +708,9 @@
     // ── 音声エンジン ──────────────────────────────────────────────────
     // 優先: Synology VOICEVOX API → フォールバック: ブラウザ Web Speech API
 
-    const TTS_API = 'https://posimai-lab.tail72e846.ts.net/brain/api/tts';
+    const DEFAULT_API_BASE = 'https://posimai-lab.tail72e846.ts.net/brain/api';
+    const API_BASE = localStorage.getItem('posimai-daily-apibase') || DEFAULT_API_BASE;
+    const TTS_API = API_BASE + '/tts';
     let TTS_SPEAKER = parseInt(localStorage.getItem('posimai-daily-speaker') || '1', 10);
     let TTS_RATE = parseFloat(localStorage.getItem('posimai-daily-rate') || '1.0');
 
@@ -1002,6 +1009,7 @@
     const themeToggle = document.getElementById('themeToggle');
     const saveSettings = document.getElementById('saveSettings');
     const apiKeyInput = document.getElementById('apiKeyInput');
+    const apiBaseInput = document.getElementById('apiBaseInput');
 
     function updateRateUI() {
         document.querySelectorAll('.rate-btn').forEach(btn => {
@@ -1020,6 +1028,7 @@
         settingsPanel.classList.add('open');
         overlay.classList.add('active');
         apiKeyInput.value = localStorage.getItem('posimai-daily-apikey') || '';
+        apiBaseInput.value = localStorage.getItem('posimai-daily-apibase') || '';
         updateRateUI();
         document.getElementById('voiceLabel').textContent =
             bestVoice ? bestVoice.name : '日本語音声が見つかりません';
@@ -1045,6 +1054,9 @@
         const newKey = apiKeyInput.value.trim();
         if (newKey) localStorage.setItem('posimai-daily-apikey', newKey);
         else localStorage.removeItem('posimai-daily-apikey');
+        const newBase = apiBaseInput.value.trim();
+        if (newBase) localStorage.setItem('posimai-daily-apibase', newBase);
+        else localStorage.removeItem('posimai-daily-apibase');
         localStorage.setItem('posimai-daily-rate', String(TTS_RATE));
         closeSettingsPanel();
         fetchBriefing();
