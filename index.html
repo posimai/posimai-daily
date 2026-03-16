@@ -96,20 +96,16 @@
         }
 
         .app-header h1 {
-            font-size: 26px;
-            font-weight: 800;
-            letter-spacing: -0.03em;
-            background: linear-gradient(to bottom, #fff, #999);
-            -webkit-background-clip: text;
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            color: var(--text);
         }
 
         [data-theme="light"] .app-header h1 {
-            background: linear-gradient(to bottom, #111827, #4B5563);
-            -webkit-background-clip: text;
-            background-clip: text;
-            color: transparent;
+            color: var(--text);
+            background: none;
+            -webkit-text-fill-color: initial;
         }
 
         .app-header p {
@@ -142,11 +138,12 @@
 
         /* ── Audio Visualization Area ── */
         .player-visual {
-            height: 180px;
+            height: 140px;
             display: flex;
             align-items: center;
             justify-content: center;
             position: relative;
+            margin-top: -10px;
         }
 
         /* Sparkle Background for Waveform */
@@ -367,10 +364,6 @@
             background: rgba(255,255,255,0.02);
             border: 1px solid transparent;
             border-radius: var(--radius);
-            text-decoration: none;
-            color: inherit;
-            transition: all 0.2s cubic-bezier(.4, 0, .2, 1);
-        }
 
         .summary-item:hover { 
             background: rgba(255,255,255,0.05); 
@@ -556,20 +549,16 @@
             color: var(--accent);
             background: var(--accent-bg);
         }
+        }
     </style>
 </head>
 <body>
 
 <div class="app-container">
     <header class="app-header">
-        <h1>Posimai</h1>
-        <p>Intelligence Feed</p>
-    </header>
-
-    <section class="date-section">
         <span class="date-label" id="current-date">MONDAY, OCT 28</span>
-        <h2 class="main-title">Today's Briefing</h2>
-    </section>
+        <h1 class="main-title" style="font-size: 20px; margin-top: 4px;">Today's Briefing</h1>
+    </header>
 
     <div class="player-visual">
         <div class="visual-glow"></div>
@@ -598,7 +587,7 @@
                 <div class="progress-bar" id="progress-bar"></div>
                 <div class="progress-handle" id="progress-handle"></div>
             </div>
-            <span class="time" id="time-total">--:--</span>
+            <span class="time" id="time-total">0:00</span>
         </div>
         <div id="tts-status" style="text-align:center; font-size:11px; color: var(--text-dim); margin-top:4px; min-height:14px; letter-spacing:0.02em;"></div>
     </div>
@@ -736,16 +725,21 @@
     let speechQueue = [];
     let currentSpeechIndex = 0;
 
-    // フォールバック用ブラウザ音声（VOICEVOX が使えない場合）
-    let syntheticVoice = null;
-    function initFallbackVoice() {
+    // フォールバック用ブラウザ音声（Natural 音声を優先選択）
+    let bestVoice = null;
+    function initBestVoice() {
         const voices = window.speechSynthesis.getVoices();
-        syntheticVoice = voices.find(v => v.lang.startsWith('ja')) || voices[0];
+        const jaVoices = voices.filter(v => v.lang.startsWith('ja'));
+        const keywords = ['Natural', 'Neural', 'Premium', 'Nanami', 'Online'];
+        
+        bestVoice = keywords.reduce((found, kw) => 
+            found || jaVoices.find(v => v.name.includes(kw)), null) 
+            || jaVoices[0];
     }
     if (window.speechSynthesis.onvoiceschanged !== undefined) {
-        window.speechSynthesis.onvoiceschanged = initFallbackVoice;
+        window.speechSynthesis.onvoiceschanged = initBestVoice;
     }
-    initFallbackVoice();
+    initBestVoice();
 
     // AudioContext — ユーザージェスチャー時に初期化・resume して Chrome の
     // Autoplay Policy をクリアする。fetch の await 後でも再生可能になる。
@@ -813,18 +807,65 @@
         currentSource.start(0);
     }
 
-    // ブラウザ TTS フォールバック
-    function speakFallback(text) {
+    // ブラウザ TTS (Principal Engine)
+    function speakNatural(text) {
+        if (!isPlaying) return;
+        window.speechSynthesis.cancel(); // Safety cleanup
+        
         const utter = new SpeechSynthesisUtterance(preprocessSpeech(text));
-        utter.voice = syntheticVoice;
-        utter.rate = 0.92;
+        utter.voice = bestVoice;
+        utter.rate = 1.0; 
+
+        // Update UI progress - estimate based on characters vs total if needed, 
+        // but for now we update time-current on 'boundary' or just per article
+        utter.onstart = () => {
+            updateActiveItem(currentSpeechIndex);
+        };
+
         utter.onend = () => {
             if (isPlaying) {
                 currentSpeechIndex++;
-                playNext();
+                if (currentSpeechIndex < speechQueue.length) {
+                    playNext();
+                } else {
+                    isPlaying = false;
+                    stopEffects();
+                    updateButtonUI();
+                }
             }
         };
+
         window.speechSynthesis.speak(utter);
+    }
+
+    function updateActiveItem(index) {
+        // Highlight current news item in the list
+        document.querySelectorAll('.summary-item').forEach((item, i) => {
+            item.style.borderColor = (i === index) ? 'var(--accent)' : 'transparent';
+            item.style.background = (i === index) ? 'var(--accent-bg)' : 'rgba(255,255,255,0.02)';
+        });
+        
+        // Update Time display (Simplified: 1 min per article for total, show current index)
+        const totalSec = speechQueue.length * 60;
+        const currentSec = index * 60;
+        document.getElementById('time-current').innerText = formatTime(currentSec);
+        
+        const progress = (index / speechQueue.length) * 100;
+        document.getElementById('progress-bar').style.width = `${progress}%`;
+        document.getElementById('progress-handle').style.left = `${progress}%`;
+    }
+
+    function formatTime(sec) {
+        const m = Math.floor(sec / 60);
+        const s = sec % 60;
+        return `${m}:${s < 10 ? '0' : ''}${s}`;
+    }
+
+    function skipArticle(dir) {
+        window.speechSynthesis.cancel();
+        currentSpeechIndex = Math.max(0, Math.min(speechQueue.length - 1, currentSpeechIndex + dir));
+        if (isPlaying) playNext();
+        else updateActiveItem(currentSpeechIndex);
     }
 
     function playNext() {
@@ -835,10 +876,10 @@
             return;
         }
         const text = speechQueue[currentSpeechIndex];
-        fetchAndPlay(text).catch(e => {
-            if (!isPlaying || e.name === 'AbortError') return; // 停止 or キャンセルなら無視
-            speakFallback(text);
-        });
+        
+        // Zundamon Logic: Use only if cached (fire-and-forget check would be too slow, so Natural is default)
+        // For now, always use speakNatural for "Instant Quality" per plan Phase 5
+        speakNatural(text);
     }
 
     function updateButtonUI() {
@@ -855,25 +896,30 @@
         updateWaveform();
     }
 
-    function updateWaveform() {
+    let waveRAF;
+    function updateWaveformRAF() {
+        if (!isPlaying) return;
+        
         bars.forEach((bar, i) => {
-            const baseH = isPlaying ? Math.random() * 50 + 15 : 12;
+            // Sinuous breathing + random jitter
+            const time = Date.now() * 0.005;
+            const sine = Math.sin(time + i * 0.2) * 10;
+            const baseH = 15 + sine + (Math.random() * 30);
+            
             bar.style.height = `${baseH}px`;
             
-            if (isPlaying) {
-                const rand = Math.random();
-                if (rand > 0.85) {
-                    bar.classList.add('sparkle');
-                    bar.style.height = `${baseH + 20}px`;
-                } else if (rand > 0.7) {
-                    bar.classList.add('glitter');
-                } else {
-                    bar.classList.remove('sparkle', 'glitter');
-                }
+            const rand = Math.random();
+            if (rand > 0.92) {
+                bar.classList.add('sparkle');
+                bar.style.height = `${baseH + 20}px`;
+            } else if (rand > 0.8) {
+                bar.classList.add('glitter');
             } else {
                 bar.classList.remove('sparkle', 'glitter');
             }
         });
+        
+        waveRAF = requestAnimationFrame(updateWaveformRAF);
     }
 
     playBtn.addEventListener('click', () => {
@@ -882,7 +928,7 @@
         updateButtonUI();
         
         if (isPlaying) {
-            waveInterval = setInterval(updateWaveform, 60);
+            updateWaveformRAF();
             particleInterval = setInterval(createParticle, 40);
             
             // Start or resume audio
@@ -892,6 +938,7 @@
             }
         } else {
             stopEffects();
+            cancelAnimationFrame(waveRAF);
         }
     });
 
@@ -987,6 +1034,7 @@
 
                 lucide.createIcons();
                 document.getElementById('time-total').innerText = `${articles.length}:00`;
+                updateActiveItem(0); // Initialize UI with first item
             } else {
                 list.innerHTML = '<p style="color:var(--text-dim); font-size:12px; text-align:center; padding: 20px;">記事が見つかりませんでした。</p>';
             }
@@ -1063,6 +1111,20 @@
 
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') closeSettingsPanel();
+    });
+
+    // Playback Button Listeners
+    document.querySelector('[data-lucide="skip-back"]').parentElement.addEventListener('click', () => skipArticle(-1));
+    document.querySelector('[data-lucide="skip-forward"]').parentElement.addEventListener('click', () => skipArticle(1));
+
+    // Progress Track Interaction
+    document.querySelector('.progress-track').addEventListener('click', (e) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const pct = x / rect.width;
+        const index = Math.floor(pct * speechQueue.length);
+        currentSpeechIndex = Math.max(0, Math.min(speechQueue.length - 1, index));
+        skipArticle(0); // Jump to current index
     });
 
     // PWA Service Worker Registration
