@@ -955,13 +955,13 @@
                                 setTimeout(() => { statusEl.textContent = ''; }, 4000);
                             } else {
                                 statusEl.textContent = `音声準備中... ${d.cached}/${d.total}`;
-                                _pollTimer = setTimeout(pollReady, 8000);
+                                _pollTimer = setTimeout(pollReady, 20000);
                             }
                         } catch (e) {
                             statusEl.textContent = '';
                         }
                     };
-                    _pollTimer = setTimeout(pollReady, 8000);
+                    _pollTimer = setTimeout(pollReady, 20000);
                 }
 
                 const iconMap = { tech: 'code', lifestyle: 'coffee', news: 'newspaper' };
