@@ -170,7 +170,7 @@
             background: var(--accent);
             border-radius: 4px;
             box-shadow: 0 0 12px var(--accent-glow);
-            transition: height 0.1s ease;
+            transition: height 0.15s ease;
         }
 
         /* ── Controls ── */
@@ -579,7 +579,6 @@
                     <i data-lucide="play" id="playIcon" style="fill: #000; width: 32px; height: 32px;"></i>
                 </div>
             </button>
-            <button class="control-btn"><i data-lucide="rotate-cw" style="width:24px;height:24px"></i></button>
             <button class="control-btn"><i data-lucide="skip-forward" style="width:24px;height:24px"></i></button>
         </div>
 
@@ -591,7 +590,6 @@
             </div>
             <span class="time" id="time-total">—</span>
         </div>
-        <div id="tts-status" style="text-align:center; font-size:11px; color: var(--text-dim); margin-top:4px; min-height:14px; letter-spacing:0.02em;"></div>
     </div>
 
     <section class="summary-section">
@@ -635,24 +633,12 @@
     </div>
 
     <div class="settings-section">
-        <span class="settings-label">読み上げ話者</span>
-        <div id="speakerBtns" style="display:flex; flex-direction:column; gap:6px;">
-            <button class="speaker-btn" data-id="1">ずんだもん（明るい）</button>
-            <button class="speaker-btn" data-id="3">ずんだもん（甘め）</button>
-            <button class="speaker-btn" data-id="0">四国めたん（ノーマル）</button>
-            <button class="speaker-btn" data-id="2">四国めたん（甘め）</button>
-            <button class="speaker-btn" data-id="8">春日部つむぎ</button>
-            <button class="speaker-btn" data-id="13">波音リツ</button>
-        </div>
-    </div>
-
-    <div class="settings-section">
         <span class="settings-label">読み上げ速度</span>
         <div style="display:flex; gap:8px;">
-            <button class="speaker-btn rate-btn" data-rate="0.8">遅め</button>
-            <button class="speaker-btn rate-btn" data-rate="1.0">普通</button>
-            <button class="speaker-btn rate-btn" data-rate="1.2">速め</button>
-            <button class="speaker-btn rate-btn" data-rate="1.5">かなり速め</button>
+            <button class="speaker-btn rate-btn" data-rate="0.8" style="flex:1; width:auto; text-align:center; padding:10px 4px;">遅め</button>
+            <button class="speaker-btn rate-btn" data-rate="1.0" style="flex:1; width:auto; text-align:center; padding:10px 4px;">普通</button>
+            <button class="speaker-btn rate-btn" data-rate="1.2" style="flex:1; width:auto; text-align:center; padding:10px 4px;">速め</button>
+            <button class="speaker-btn rate-btn" data-rate="1.5" style="flex:1; width:auto; text-align:center; padding:10px 4px;">高速</button>
         </div>
     </div>
 
@@ -911,34 +897,31 @@
     }
 
     let waveRAF;
+    let lastWaveUpdate = 0;
     function updateWaveformRAF() {
         if (!isPlaying) return;
-        
-        bars.forEach((bar, i) => {
-            // Sinuous breathing + random jitter
-            const time = Date.now() * 0.005;
-            const sine = Math.sin(time + i * 0.2) * 10;
-            const baseH = 15 + sine + (Math.random() * 30);
-            
-            bar.style.height = `${baseH}px`;
-            
-            const rand = Math.random();
-            if (rand > 0.92) {
-                bar.classList.add('sparkle');
-                bar.style.height = `${baseH + 20}px`;
-            } else if (rand > 0.8) {
-                bar.classList.add('glitter');
-            } else {
-                bar.classList.remove('sparkle', 'glitter');
-            }
-        });
-        
+        const now = Date.now();
+        // 150ms ごとに更新（CSS transition 0.15s と同期して滑らかな波打ちになる）
+        if (now - lastWaveUpdate >= 150) {
+            lastWaveUpdate = now;
+            const time = now * 0.003;
+            bars.forEach((bar, i) => {
+                const sine = Math.sin(time + i * 0.45) * 28;
+                const height = Math.max(8, 36 + sine + (Math.random() * 18));
+                bar.style.height = `${height}px`;
+                const rand = Math.random();
+                if (rand > 0.93) {
+                    bar.classList.add('sparkle');
+                } else {
+                    bar.classList.remove('sparkle', 'glitter');
+                }
+            });
+        }
         waveRAF = requestAnimationFrame(updateWaveformRAF);
     }
 
     playBtn.addEventListener('click', () => {
         isPlaying = !isPlaying;
-        document.getElementById('tts-status').textContent = '';
         updateButtonUI();
         
         if (isPlaying) {
@@ -977,50 +960,10 @@
                 currentSpeechIndex = 0;
                 articles.forEach((a, i) => {
                     const prefix = i === 0 ? "最初のニュースです。" : "続いて。";
-                    const body = (a.title || '').substring(0, 60); // タイトルのみ・60字で打ち切り（合成時間短縮）
+                    const body = a.title || '';
                     speechQueue.push(`${prefix}${escapeHTML(a.source) || '不明なソース'}より。${body}`);
                 });
                 speechQueue.push("本日のブリーフィングは以上です。");
-
-                // バックグラウンドウォームアップ + ポーリングで実際の完了を検知
-                const _wKey = localStorage.getItem('posimai-daily-apikey') || '';
-                if (_wKey) {
-                    const statusEl = document.getElementById('tts-status');
-                    const warmupUrl = TTS_API.replace(/\/tts$/, '/tts/warmup');
-                    const readyUrl  = TTS_API.replace(/\/tts$/, '/tts/ready');
-                    const queueSnapshot = [...speechQueue];
-                    const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${_wKey}` };
-
-                    statusEl.textContent = `音声準備中... 0/${queueSnapshot.length}`;
-
-                    // ウォームアップ開始（fire-and-forget）
-                    fetch(warmupUrl, {
-                        method: 'POST', headers,
-                        body: JSON.stringify({ texts: queueSnapshot, speaker: TTS_SPEAKER })
-                    }).catch(() => {});
-
-                    // 8秒ごとにキャッシュ完了数を確認
-                    let _pollTimer = null;
-                    const pollReady = async () => {
-                        try {
-                            const r = await fetch(readyUrl, {
-                                method: 'POST', headers,
-                                body: JSON.stringify({ texts: queueSnapshot, speaker: TTS_SPEAKER })
-                            });
-                            const d = await r.json();
-                            if (d.ready) {
-                                statusEl.textContent = '音声準備完了';
-                                setTimeout(() => { statusEl.textContent = ''; }, 4000);
-                            } else {
-                                statusEl.textContent = `音声準備中... ${d.cached}/${d.total}`;
-                                _pollTimer = setTimeout(pollReady, 20000);
-                            }
-                        } catch (e) {
-                            statusEl.textContent = '';
-                        }
-                    };
-                    _pollTimer = setTimeout(pollReady, 20000);
-                }
 
                 const iconMap = { tech: 'code', lifestyle: 'coffee', news: 'newspaper' };
 
@@ -1076,10 +1019,7 @@
     const saveSettings = document.getElementById('saveSettings');
     const apiKeyInput = document.getElementById('apiKeyInput');
 
-    function updateSpeakerUI() {
-        document.querySelectorAll('.speaker-btn[data-id]').forEach(btn => {
-            btn.classList.toggle('active', parseInt(btn.dataset.id) === TTS_SPEAKER);
-        });
+    function updateRateUI() {
         document.querySelectorAll('.rate-btn').forEach(btn => {
             btn.classList.toggle('active', parseFloat(btn.dataset.rate) === TTS_RATE);
         });
@@ -1088,14 +1028,7 @@
     document.querySelectorAll('.rate-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             TTS_RATE = parseFloat(btn.dataset.rate);
-            updateSpeakerUI();
-        });
-    });
-
-    document.querySelectorAll('.speaker-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            TTS_SPEAKER = parseInt(btn.dataset.id);
-            updateSpeakerUI();
+            updateRateUI();
         });
     });
 
@@ -1103,7 +1036,7 @@
         settingsPanel.classList.add('open');
         overlay.classList.add('active');
         apiKeyInput.value = localStorage.getItem('posimai-daily-apikey') || '';
-        updateSpeakerUI();
+        updateRateUI();
         document.getElementById('voiceLabel').textContent =
             bestVoice ? bestVoice.name : '日本語音声が見つかりません';
     }
@@ -1128,7 +1061,6 @@
         const newKey = apiKeyInput.value.trim();
         if (newKey) localStorage.setItem('posimai-daily-apikey', newKey);
         else localStorage.removeItem('posimai-daily-apikey');
-        localStorage.setItem('posimai-daily-speaker', String(TTS_SPEAKER));
         localStorage.setItem('posimai-daily-rate', String(TTS_RATE));
         closeSettingsPanel();
         fetchBriefing();
@@ -1141,13 +1073,12 @@
     // Playback Button Listeners
     document.querySelector('[data-lucide="skip-back"]').parentElement.addEventListener('click', () => skipArticle(-1));
     document.querySelector('[data-lucide="skip-forward"]').parentElement.addEventListener('click', () => skipArticle(1));
-    // rotate-ccw = 現在の記事を最初から再再生、rotate-cw = 次の記事へ（skip-forward と同等）
+    // rotate-ccw = 現在の記事を頭から再再生
     document.querySelector('[data-lucide="rotate-ccw"]').parentElement.addEventListener('click', () => {
         if (!isPlaying) return;
         window.speechSynthesis.cancel();
-        playNext(); // 同じ index で再再生
+        playNext();
     });
-    document.querySelector('[data-lucide="rotate-cw"]').parentElement.addEventListener('click', () => skipArticle(1));
 
     // Progress Track Interaction
     document.querySelector('.progress-track').addEventListener('click', (e) => {
