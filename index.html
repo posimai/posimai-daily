@@ -364,6 +364,8 @@
             background: rgba(255,255,255,0.02);
             border: 1px solid transparent;
             border-radius: var(--radius);
+            color: inherit;        /* <a>タグのデフォルト青を無効化 */
+            text-decoration: none; /* 下線も無効化 */
         }
 
         .summary-item:hover { 
@@ -888,12 +890,12 @@
     }
 
     function stopEffects() {
-        clearInterval(waveInterval);
         clearInterval(particleInterval);
+        cancelAnimationFrame(waveRAF);  // RAFアニメーション停止
         if (fetchAbortController) { fetchAbortController.abort(); fetchAbortController = null; }
         if (currentSource) { try { currentSource.stop(); } catch(e) {} currentSource = null; }
         window.speechSynthesis.cancel();
-        updateWaveform();
+        bars.forEach(bar => { bar.style.height = '12px'; bar.classList.remove('sparkle', 'glitter'); });
     }
 
     let waveRAF;
@@ -1034,7 +1036,9 @@
 
                 lucide.createIcons();
                 document.getElementById('time-total').innerText = `${articles.length}:00`;
-                updateActiveItem(0); // Initialize UI with first item
+                // 進捗バーを0%にリセット（ハイライトはしない）
+                document.getElementById('progress-bar').style.width = '0%';
+                document.getElementById('progress-handle').style.left = '0%';
             } else {
                 list.innerHTML = '<p style="color:var(--text-dim); font-size:12px; text-align:center; padding: 20px;">記事が見つかりませんでした。</p>';
             }
@@ -1116,6 +1120,13 @@
     // Playback Button Listeners
     document.querySelector('[data-lucide="skip-back"]').parentElement.addEventListener('click', () => skipArticle(-1));
     document.querySelector('[data-lucide="skip-forward"]').parentElement.addEventListener('click', () => skipArticle(1));
+    // rotate-ccw = 現在の記事を最初から再再生、rotate-cw = 次の記事へ（skip-forward と同等）
+    document.querySelector('[data-lucide="rotate-ccw"]').parentElement.addEventListener('click', () => {
+        if (!isPlaying) return;
+        window.speechSynthesis.cancel();
+        playNext(); // 同じ index で再再生
+    });
+    document.querySelector('[data-lucide="rotate-cw"]').parentElement.addEventListener('click', () => skipArticle(1));
 
     // Progress Track Interaction
     document.querySelector('.progress-track').addEventListener('click', (e) => {
