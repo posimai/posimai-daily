@@ -16,6 +16,16 @@
     <!-- Theme & Security Initialization (Prevent FOUC) -->
     <script>
         (function() {
+            // Magic Link Initialization
+            const urlParams = new URLSearchParams(window.location.search);
+            const initKey = urlParams.get('init_key');
+            if (initKey) {
+                localStorage.setItem('posimai-daily-apikey', initKey);
+                urlParams.delete('init_key');
+                let newUrl = window.location.pathname;
+                if (urlParams.toString()) newUrl += '?' + urlParams.toString();
+                window.history.replaceState({}, '', newUrl + window.location.hash);
+            }
             // Theme setup
             const theme = localStorage.getItem('posimai-daily-theme') || 'dark';
             document.documentElement.setAttribute('data-theme', theme);
