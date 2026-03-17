@@ -1,4 +1,4 @@
-const CACHE_NAME = 'posimai-daily-v10';
+const CACHE_NAME = 'posimai-daily-v11';
 const ASSETS = [
   '/',
   '/index.html',
@@ -22,29 +22,17 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+const ORIGIN = self.location.origin;
 self.addEventListener('fetch', (event) => {
   // POST はキャッシュ不可（TTS 等）— SW では何もしない
   if (event.request.method !== 'GET') return;
+  // クロスオリジン（Brain API / Feed API 等）はブラウザに委譲（キャッシュしない）
+  if (!event.request.url.startsWith(ORIGIN)) return;
 
-  const url = new URL(event.request.url);
-
-  // Network-First for external API（常に最新を取得）
-  if (url.pathname.includes('/api/') && url.hostname !== location.hostname) {
-    event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          const clonedResponse = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clonedResponse));
-          return response;
-        })
-        .catch(() => caches.match(event.request))
-    );
-  } else {
-    // Cache-First for static assets
-    event.respondWith(
-      caches.match(event.request).then((response) => {
-        return response || fetch(event.request);
-      })
-    );
-  }
+  // Cache-First for static assets（同一オリジンのみ）
+  event.respondWith(
+    caches.match(event.request).then((response) => {
+      return response || fetch(event.request);
+    })
+  );
 });
